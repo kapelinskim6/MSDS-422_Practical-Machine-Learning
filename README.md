@@ -1,0 +1,4 @@
+# MSDS-422-Practical-Machine-Learning
+
+This course takes a practical approach to introduce several machine learning methods with business applications in marketing, finance, and other areas. The course aims to provide a practical survey of modern machine learning techniques that can be applied to make informed business decisions: regression and classification methods, resampling methods and model selection, regularization, perceptron and artificial neural networks, tree-based methods, support vector machines and kernel methods, principal components analysis, and clustering methods.
+At the end of this course, students will have a basic understanding of how each of these methods learn from data to find underlying patterns useful for prediction, classification, and exploratory data analysis. Further, each student will learn how to implement machine learning methods in the R statistical programming language for improved decision-making in real business situations.
