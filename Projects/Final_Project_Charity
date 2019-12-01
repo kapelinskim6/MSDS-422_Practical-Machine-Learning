@@ -1,0 +1,476 @@
+-*- R -*-
+# Mike Kapelinski
+# MSDS 422-56
+# Final Project 
+
+########## Load Libraries ###########
+library(MASS)
+library(glmnet)
+library(pROC)
+library(leaps)
+library(tree)
+library(gbm)
+library(randomForest)
+library(e1071)
+library(ggplot2)
+
+########## Load the Data ###########
+charity <- read.csv('./charity.csv') # load the "charity.csv" file
+########## Predictor Transformations ###########
+charity.t <- charity
+charity.t$reg3.4 <- ifelse(charity.t$reg3 == 1,1,ifelse(charity.t$reg4 == 1,1,0))
+charity.t$poc <- ifelse(charity.t$chld > 1,1,0)
+charity.t$wrat.cat1 <- ifelse(charity.t$wrat == 1,1,0)
+charity.t$wrat.cat2 <- ifelse(charity.t$wrat == 2,1,ifelse(charity.t$wrat == 3,1,0))
+charity.t$wrat.cat3 <- ifelse(charity.t$wrat == 4,1,ifelse(charity.t$wrat == 5,1,0))
+charity.t$wrat.cat4 <- ifelse(charity.t$wrat >= 6,1,0)
+charity.t$avhv.log <- log(charity.t$avhv)
+charity.t$incm.log <- log(charity.t$incm)
+charity.t$inca.log <- log(charity.t$inca)
+charity.t$plow.high <- ifelse(charity.t$plow > 20,1,0)
+charity.t$npro.bin1 <- ifelse(charity.t$npro < 37,1,0)
+charity.t$npro.bin2 <- ifelse(charity.t$npro >= 37 & charity.t$npro < 84,1,0)
+charity.t$npro.bin3 <- ifelse(charity.t$npro > 84,1,0)
+charity.t$tgif.high <- ifelse(charity.t$tgif > 91,1,0)
+charity.t$lgif.log <- log(charity.t$lgif)
+charity.t$rgif.log <- log(charity.t$rgif)
+charity.t$agif.log <- log(charity.t$agif)
+
+#################### Predictor Capping ##########################
+charity.tt <- charity.t
+# Capping of plow
+Q1plow <- quantile(charity.tt$plow, 0.25)
+Q3plow <- quantile(charity.tt$plow, 0.75)
+Q4plow <- quantile(charity.tt$plow, 0.99)
+IQRplow <- Q3plow - Q1plow
+IQRplow.1.5 <- IQRplow*1.5
+maxUsualplow <- Q3plow + IQRplow.1.5 
+maxUsualplow
+minUsualplow <- Q1plow - IQRplow.1.5 
+minUsualplow
+sum(charity.tt.$plow > 46.5)
+charity.tt$plow[charity.tt$plow > 46.5] <- 46.5
+summary(charity.tt$plow)
+# Cappinng of avhv
+Q1avhv <- quantile(charity.tt$avhv.log, 0.25)
+Q3avhv <- quantile(charity.tt$avhv.log, 0.75)
+Q4avhv = quantile(charity.tt$avhv.log, 0.95)
+IQRavhv <- Q3avhv - Q1avhv
+IQRavhv.1.5 <- IQRavhv*1.5
+maxUsualavhv <- Q3avhv + IQRavhv.1.5 
+maxUsualavhv
+minUsualavhv <- Q1avhv - IQRavhv.1.5 
+minUsualavhv
+sum(charity.tt$avhv.log > 6.114)
+charity.tt$avhv.log[charity.tt$avhv.log > 6.114] <- 6.114
+summary(charity.tt$avhv.log)
+# Capping of incm
+Q1incm <- quantile(charity.tt$incm, 0.25)
+Q3incm <- quantile(charity.tt$incm, 0.75)
+Q4incm <- quantile(charity.tt$incm, 0.95)
+IQRincm <- Q3incm - Q1incm
+IQRincm.1.5 <- IQRincm*1.5
+maxUsualincm <- Q3incm + IQRincm.1.5 
+minUsualincm <- Q1incm - IQRincm.1.5 
+maxUsualincm
+minUsualincm
+sum(charity.tt$incm.log > 5.028)
+charity.tt$incm.log[charity.tt$incm.log > 5.028] <- 5.028
+summary(charity.tt$incm.log)
+# Capping of inca
+Q1inca <- quantile(charity.tt$inca.log, 0.25)
+Q3inca <- quantile(charity.tt$inca.log, 0.75)
+Q4inca <- quantile(charity.tt$inca.log, 0.95)
+IQRinca <- Q3inca - Q1inca
+IQRinca.1.5 <- IQRinca*1.5
+maxUsualinca <- Q3inca + IQRinca.1.5 
+maxUsualinca
+minUsualinca <- Q1inca - IQRinca.1.5 
+minUsualinca
+sum(charity.tt$inca.log > 5.015)
+charity.tt$inca.log[charity.tt$inca.log > 5.015] <- 5.015
+summary(charity.tt$inca.log)
+# Capping of lgif
+Q1lgif <- quantile(charity.tt$lgif.log, 0.25)
+Q3lgif <- quantile(charity.tt$lgif.log, 0.75)
+Q4lgif <- quantile(charity.tt$lgif.log, 0.95)
+IQRlgif <- Q3lgif - Q1lgif
+IQRlgif.1.5 <- IQRlgif*1.5
+maxUsuallgif <- Q3lgif + IQRlgif.1.5 
+maxUsuallgif
+minUsuallgif <- Q1lgif - IQRlgif.1.5 
+minUsuallgif
+sum(charity.tt$lgif.log > 4.593)
+charity.tt$lgif.log[charity.tt$lgif.log > 4.593] <- 4.593
+summary(charity.tt$lgif.log)
+# Capping of tdon
+Q1tdon <- quantile(charity.t$tdon, 0.25)
+Q3tdon <- quantile(charity.t$tdon, 0.75)
+Q4tdon <- quantile(charity.t$tdon, 0.95)
+IQRtdon <- Q3tdon - Q1tdon
+IQRtdon.1.5 <- IQRtdon*1.5
+maxUsualtdon <- Q3tdon + IQRtdon.1.5 
+maxUsualtdon
+minUsualtdon <- Q1tdon - IQRtdon.1.5
+minUsualtdon
+sum(charity.tt$tdon > 32.5)
+charity.tt$tdon[charity.t$tdon > 32.5] <- 32.5
+summary(charity.tt$tdon)
+# Capping of tlag
+Q1tlag <- quantile(charity.t$tlag, 0.25)
+Q3tlag <- quantile(charity.t$tlag, 0.75)
+Q4tlag <- quantile(charity.t$tlag, 0.95)
+IQRtlag <- Q3tlag - Q1tlag
+IQRtlag.1.5 <- IQRtlag*1.5
+maxUsualtlag <- Q3tlag + IQRtlag.1.5 
+maxUsualtlag
+minUsualtlag <- Q1tlag - IQRtlag.1.5 
+minUsualtlag
+sum(charity.tt$tlag > 11.5)
+charity.tt$tlag[charity.t$tlag > 11.5] <- 11.5
+summary(charity.tt$tlag)
+# Capping of agif
+Q1agif <- quantile(charity.tt$agif.log, 0.25)
+Q3agif <- quantile(charity.tt$agif.log, 0.75)
+Q4agif <- quantile(charity.tt$agif.log, 0.95)
+IQRgif <- Q3agif - Q1agif
+IQRagif.1.5 <- IQRagif*1.5
+maxUsualagif <- Q3agif + IQRagif.1.5 
+maxUsualagif
+minUsualagif <- Q1agif - IQRagif.1.5 
+minUsualagif
+sum(charity.tt$agif.log > 3.824)
+charity.tt$agif.log[charity.tt$agif.log > 3.284] <- 3.284
+summary(charity.tt$agif.log)
+# Capping of rgif
+Q1rgif <- quantile(charity.tt$rgif.log, 0.25)
+Q3rgif <- quantile(charity.tt$rgif.log, 0.75)
+Q4rgif <- quantile(charity.tt$rgif.log, 0.95)
+IQRrgif <- Q3rgif - Q1rgif
+IQRrgif.1.5 <- IQRrgif*1.5
+maxUsualrgif <- Q3rgif + IQRrgif.1.5 
+maxUsualrgif
+minUsualrgif <- Q1rgif - IQRrgif.1.5 
+minUsualrgif
+sum(charity.tt$rgif.log > 4.125)
+charity.tt$rgif.log[charity.tt$rgif.log > 4.125] <- 4.125
+summary(charity.tt$rgif.log)
+
+########## Set up Data For Analysis ###########
+data.train <- charity.tt[charity$part=="train",]
+x.train <- data.train[,2:41] ####################### Allow for created variables to be included 
+x.train = data.train[,-22:-24]####################### Allow for created variables to be included 
+c.train <- data.train[,22] # donr
+n.train.c <- length(c.train) # 3984
+y.train <- data.train[c.train==1,23] # damt for observations with donr=1
+n.train.y <- length(y.train) # 1995
+
+data.valid <- charity.t[charity$part=="valid",]
+x.valid <- data.valid[,2:41]
+x.valid = data.valid[,-22:-24]
+c.valid <- data.valid[,22] # donr
+n.valid.c <- length(c.valid) # 2018
+y.valid <- data.valid[c.valid==1,23] # damt for observations with donr=1
+n.valid.y <- length(y.valid) # 999
+
+data.test <- charity.t[charity$part=="test",]
+n.test <- dim(data.test)[1] # 2007
+x.test <- data.test[,2:41]
+x.test = data.test[,-22:-24]
+
+x.train.mean <- apply(x.train, 2, mean)
+x.train.sd <- apply(x.train, 2, sd)
+x.train.std <- t((t(x.train)-x.train.mean)/x.train.sd) # standardize to have zero mean and unit sd
+apply(x.train.std, 2, mean) # check zero mean
+apply(x.train.std, 2, sd) # check unit sd
+data.train.std.c <- data.frame(x.train.std, donr=c.train) # to classify donr
+data.train.std.y <- data.frame(x.train.std[c.train==1,], damt=y.train) # to predict damt when donr=1
+
+x.valid.std <- t((t(x.valid)-x.train.mean)/x.train.sd) # standardize using training mean and sd
+data.valid.std.c <- data.frame(x.valid.std, donr=c.valid) # to classify donr
+data.valid.std.y <- data.frame(x.valid.std[c.valid==1,], damt=y.valid) # to predict damt when donr=1
+
+x.test.std <- t((t(x.test)-x.train.mean)/x.train.sd) # standardize using training mean and sd
+data.test.std <- data.frame(x.test.std)
+
+########## User Defined Functions ###########
+
+class.validation.results <- function(validation.preds) {
+  profit.preds <- cumsum(14.5*c.valid[order(validation.preds, decreasing=T)]-2)
+  n.mail <- which.max(profit.preds) # number of mailings to maximize profit
+  max.profit <- max(profit.preds)
+  profit.plot <- plot(profit.preds)
+  
+  cutoff <- sort(validation.preds, decreasing=T)[n.mail+1] # set cutoff based on n.mail
+  chat.valid <- ifelse(validation.preds > cutoff, 1, 0) # mail to everyone above the cutoff
+  conf.matrix <- table(chat.valid, c.valid) # classification table
+  
+  return(list(profit.preds=profit.preds,n.mail=n.mail,max.profit=max.profit,
+              profit.plot=profit.plot,cutoff=cutoff,chat.valid=chat.valid,
+              conf.matrix=conf.matrix))
+}
+
+regression.validation.metrics <- function(validation.preds) {
+  mpe <- mean((y.valid - validation.preds)^2) # mean prediction error
+  se <- sd((y.valid - validation.preds)^2)/sqrt(n.valid.y) # std error
+  return(list(MPE=mpe,SE=se))
+}
+
+##### Model Setup ######
+exclude <- c('ID','damt','part')
+
+##### Model 1: Logistic Regression w/ Lasso and CV ######
+
+# Create data set and model
+lasso.x.train <- model.matrix(as.factor(donr)~.,data = data.train[,!names(data.train) %in% exclude])[,-1]
+lasso.x.valid <- model.matrix(as.factor(donr)~.,data = data.valid[,!names(data.valid) %in% exclude])[,-1]
+lasso.mod <- glmnet(lasso.x.train,as.factor(data.train$donr),alpha=1,family='binomial')
+plot(lasso.mod)
+
+# Cross-Validation & Prediction
+set.seed(1)
+cv.out=cv.glmnet(lasso.x.train,as.factor(data.train$donr),alpha=1,family='binomial')
+plot(cv.out)
+bestlam <- cv.out$lambda.1se
+lasso.cv.pred <- predict(lasso.mod ,type='response',s=bestlam ,newx=lasso.x.valid)
+lasso.cv.coef <- predict(lasso.mod ,type="coefficients",s=bestlam)
+
+# Summary of Results
+class.validation.results(lasso.cv.pred)[2:3] 
+lasso.cv.coef
+
+##### Model 2: LDA - Variables Selected using Lasso in Model 1 ######
+lda.fit <- lda(as.factor(donr) ~ reg1 + reg2 + home + chld + hinc + genf + wrat + 
+                  inca +npro + tgif + tdon + tlag + reg3.4 + poc + wrat.cat1 +
+                  wrat.cat3 + wrat.cat4 + avhv.log + incm.log + npro.bin1 + tgif.high, 
+                data.train)
+
+lda.preds <- predict(lda.fit, data.valid)$posterior[,2] # n.valid.c post probs
+class.validation.results(lda.preds)[2:3] # do for each model
+
+##### Model 3: Trees ######
+tree.mod <- tree(as.factor(donr)~.,data=data.train[!(names(data.train) %in% exclude)])
+tree.preds <- predict(tree.mod,data.valid)
+class.validation.results(tree.preds[,2])[2:3] # do for each model
+
+summary(tree.mod)
+plot(tree.mod)
+text(tree.mod,pretty=0)
+tree.mod # astericks mean terminal nodes
+
+##### Model 4: Bagging #####
+set.seed(1)
+bag.mod <- randomForest(as.factor(donr)~.,data=data.train[!(names(data.train) %in% exclude)],
+                        mtry=38,importance=TRUE,distribution='bernoulli')
+bag.mod
+bag.preds <- predict(bag.mod,newdata=data.valid,n.trees=5000,type='prob')
+class.validation.results(bag.preds[,2])[2:3] # do for each model
+importance(bag.mod)
+
+varImpPlot(bag.mod,n.var = 10,main = "Bagged Decision Tree")
+
+##### Model 5: Random Forest #####
+set.seed(1)
+rf.mod <- randomForest(as.factor(donr)~.,data=data.train[!(names(data.train) %in% exclude)],
+                       importance=TRUE,distribution='bernoulli')
+rf.mod
+rf.preds <- predict(rf.mod,newdata=data.valid,n.trees=5000,type='prob')
+class.validation.results(rf.preds[,2])[2:3] # do for each model
+importance(rf.mod)
+
+##### Model 6: Boosting #####
+# Determine best interaction.depth
+n <- seq(from = 1,to = 10,by=1)
+p <- vector(length=10)
+cm <- list(length=10)
+
+for (i in n) {
+  mod <- gbm(donr~.,data=data.train[!(names(data.train) %in% exclude)],
+             distribution='bernoulli',n.trees=5000, interaction.depth=i)
+  preds <- predict(mod,newdata=data.valid,n.trees=5000,type='response')
+  profit <- class.validation.results(preds)[3]
+  conf.mat <- class.validation.results(preds)[7]
+  p[i] <- profit
+  cm[i] <- conf.mat
+  print(profit)
+  print(conf.mat)
+}
+
+set.seed(1)
+boost.fit <- gbm(donr~.,data=data.train[!(names(data.train) %in% exclude)],
+                 distribution='bernoulli',n.trees=5000,interaction.depth = 4)
+summary(boost.fit)
+boost.preds <- predict(boost.fit,newdata=data.valid,n.trees=5000,type='response')
+class.validation.results(boost.preds)[2:3] # do for each model
+
+
+# Profit by interaction.depth plot
+plot(1:10,p,xlab='Interaction Depth',ylab='Profit',type='b')
+
+# Variable Importance Plot
+plot.boost <- summary(boost.fit)
+#plot.boost.x <- plot.boost$rel.inf[1:5]
+#plot.boost.y <- plot.boost$var[1:5]
+plot.boost.x <- c(38.428347, 15.025232, 10.568380,  9.988329, 6.556511)
+plot.boost.y <- c('chld', 'hinc', 'reg2', 'home', 'wrat')
+barplot(rev(plot.boost.x),names.arg = rev(plot.boost.y),horiz = T,xlab='Relative Influence')
+
+##### Model Comparison #####
+class.validation.results(lasso.cv.pred)[2:3]
+class.validation.results(lda.preds)[2:3] # do for each model
+class.validation.results(lasso.cv.pred)[7]
+class.validation.results(lda.preds)[7] # do for each model
+
+class.validation.results(tree.preds[,2])[2:3] # do for each model
+class.validation.results(bag.preds[,2])[2:3] # do for each model
+class.validation.results(rf.preds[,2])[2:3] # do for each model
+class.validation.results(boost.preds)[2:3] # do for each model
+
+class.validation.results(tree.preds[,2])[7] # do for each model
+class.validation.results(bag.preds[,2])[7] # do for each model
+class.validation.results(rf.preds[,2])[7] # do for each model
+class.validation.results(boost.preds)[7] # do for each model
+
+##### Model Prediction for 'Best' Classification Model ######
+# Change model.log1 to whatever model is selection in model comparison
+#post.test <- predict(boost.mod, data.test.std, type="response") # post probs for test data
+post.test <- predict(boost.fit, data.test,n.trees=5000, type="response") # post probs for test data
+
+##### Oversampling Model Adjustment ######
+# Oversampling adjustment for calculating number of mailings for test set
+
+n.mail.valid <- unlist(class.validation.results(boost.preds)[2])
+tr.rate <- .1 # typical response rate is .1
+vr.rate <- .5 # whereas validation response rate is .5
+adj.test.1 <- (n.mail.valid/n.valid.c)/(vr.rate/tr.rate) # adjustment for mail yes
+adj.test.0 <- ((n.valid.c-n.mail.valid)/n.valid.c)/((1-vr.rate)/(1-tr.rate)) # adjustment for mail no
+adj.test <- adj.test.1/(adj.test.1+adj.test.0) # scale into a proportion
+n.mail.test <- round(n.test*adj.test, 0) # calculate number of mailings for test set
+
+cutoff.test <- sort(post.test, decreasing=T)[n.mail.test+1] # set cutoff based on n.mail.test
+chat.test <- ifelse(post.test>cutoff.test, 1, 0) # mail to everyone above the cutoff
+table(chat.test)
+#    0    1 
+# 1676  331
+# based on this model we'll mail to the 331 highest posterior probabilities
+
+
+########## Prediction Modeling ###########
+
+##### Model 0: Least Squares (From Sample File) ######
+
+model.ls2 <- lm(damt ~ reg1 + reg2 + reg3 + reg4 + home + chld + hinc + genf + 
+                  avhv + incm + inca + plow + npro + tgif + lgif + rgif + tdon + tlag + agif, 
+                data.train.std.y)
+
+pred.valid.ls2 <- predict(model.ls2, newdata = data.valid.std.y) # validation predictions
+
+##### Model 1: Ridge Regression ###### 
+
+# Create data set and model
+exclude <- c('ID','donr','parttrain','partvalid')
+ridge.x.train <- model.matrix(damt~.,data = data.train[data.train$donr > 0,!names(data.train) %in% exclude])[,-1]
+ridge.x.valid <- model.matrix(damt~.,data = data.valid[data.valid$donr > 0,!names(data.valid) %in% exclude])[,-1]
+ridge.mod <- glmnet(ridge.x.train,data.train$damt[data.train$donr >0],alpha=0)
+plot(ridge.mod)
+
+# Cross-Validation & Prediction
+set.seed(1)
+cv.out=cv.glmnet(ridge.x.train,data.train$damt[data.train$donr >0],alpha=0)
+plot(cv.out)
+bestlam <- cv.out$lambda.1se
+ridge.cv.pred <- predict(ridge.mod ,type='response',s=bestlam ,newx=ridge.x.valid)
+ridge.cv.coef <- predict(ridge.mod ,type="coefficients",s=bestlam)
+
+# Summary of Results
+regression.validation.metrics(ridge.cv.pred)
+ridge.cv.coef
+
+##### Model 2: Lasso Regression ###### 
+
+# Create data set and model
+exclude <- c('ID','donr','parttrain','partvalid')
+lasso.x.train <- model.matrix(damt~.,data = data.train[data.train$donr > 0,!names(data.train) %in% exclude])[,-1]
+lasso.x.valid <- model.matrix(damt~.,data = data.valid[data.valid$donr > 0,!names(data.valid) %in% exclude])[,-1]
+lasso.mod <- glmnet(lasso.x.train,data.train$damt[data.train$donr >0],alpha=1)
+plot(lasso.mod)
+
+# Cross-Validation & Prediction
+set.seed(1)
+cv.out=cv.glmnet(lasso.x.train,data.train$damt[data.train$donr >0],alpha=1)
+plot(cv.out)
+bestlam <- cv.out$lambda.1se
+lasso.cv.pred <- predict(lasso.mod ,type='response',s=bestlam ,newx=lasso.x.valid)
+lasso.cv.coef <- predict(lasso.mod ,type="coefficients",s=bestlam)
+
+##### Model 3: Linear Regression Using Automated Variable Selection #####
+
+# Least squares regression, predicit donor amt
+regfit.full <- regsubsets(damt~., data=data.train.std.y)
+summary(regfit.full)
+
+upper.lm <- lm(damt~ .,data=data.train.std.y);
+summary(upper.lm)
+# Define the lower model as the Intercept model
+lower.lm <- lm(damt ~ 1,data=data.train.std.y);
+
+forward.lm <- stepAIC(object=lower.lm,scope=list(upper=formula(upper.lm),lower=~1),
+                      direction=c('forward'));
+
+backward.lm <- stepAIC(object=upper.lm,direction=c('backward'));
+summary(backward.lm)
+
+step.lm <- lm(damt~reg1+reg2+home+chld+wrat, data=data.train.std.y)
+
+stepwise.lm <- stepAIC(object=step.lm,scope=list(upper=formula(upper.lm),lower=~1),
+                       direction=c('both'));
+
+# backward lm has the lowest AIC, so we will use this
+pred.valid.backwardlm <- predict(backward.lm, newdata = data.valid.std.y)
+# Generates a MSE in the validation set of 1.399853
+
+# Check VIF values
+vif(backward.lm)
+sum(vif(backward.lm)>10)
+
+# Manually edit to correct VIF issues, remove VIF values above 10
+# Remove wrat.cat3, wrat.cat4, inca.log, npro.bin1, npro.bin2, npro.bin3
+edited.lm <- lm(damt~reg2+reg3+reg4+home+chld+hinc+genf+wrat+inca+plow+tgif+tdon+poc
+                +wrat.cat2+incm.log+plow.high+tgif.high+lgif.log+rgif.log+agif.log, data=data.train.std.y)
+vif(edited.lm) # Highest VIF of around 6.5 now
+plot(edited.lm)
+pred.edit.lm <- predict(backward.lm, newdata=data.valid.std.y)
+yhat2.lm <- predict(my.lm, newdata=data.valid.std.y)
+
+# Partial Least Squares
+set.seed(1)
+library(pls)
+pls.fit <- plsr(damt~., data=data.train.std.y, scale=TRUE, validation="CV")
+summary(pls.fit)
+pls.pred <- predict(pls.fit, data.valid.std.y, ncomp=20)
+mean((pls.pred-y.valid)^2)
+
+# Summary of Results
+regression.validation.metrics(lasso.cv.pred)
+
+##### Model Comparison ######
+# select model with minimum mean prediction error in the validation sample
+regression.validation.metrics(pred.valid.ls2)
+regression.validation.metrics(ridge.cv.pred)
+regression.validation.metrics(lasso.cv.pred)
+regression.validation.metrics(pred.valid.backwardlm)
+regression.validation.metrics(edited.lm)
+regression.validation.metrics(pls.pred)
+
+
+# Change to whatever model is selected as best
+#yhat.test <- predict(model.ls2, newdata = data.test.std) # test predictions
+yhat.test <- predict(edited.lm, newdata = data.test) # test predictions
+
+
+########## Final Results ###########
+ip <- data.frame(chat=chat.test, yhat=yhat.test) # data frame with two variables: chat and yhat
+
+final.profit <- ifelse(ip$chat==1, ip$chat*ip$yhat-2,0)
+sum(final.profit)
+write.csv(ip, file="Group4.csv", row.names=FALSE) # use your initials for the file name
