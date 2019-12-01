@@ -1,7 +1,7 @@
 -*- R -*-
 # Mike Kapelinski
 # MSDS 422-56
-# Final Project 
+# Final Project Charity
 
 ########## Load Libraries ###########
 library(MASS)
